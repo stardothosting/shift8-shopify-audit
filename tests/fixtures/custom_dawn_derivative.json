@@ -1,0 +1,14 @@
+{
+  "url": "https://fixtures.example/custom-dawn",
+  "final_url": "https://fixtures.example/custom-dawn",
+  "status_code": 200,
+  "html": "<html><head><meta name=\"generator\" content=\"Shopify\"><link rel=\"stylesheet\" href=\"https://cdn.shopify.com/s/files/1/0000/1111/t/9/assets/theme.css\"><script src=\"https://cdn.shopify.com/s/files/1/0000/1111/t/9/assets/theme.js\"></script></head><body><script>Shopify.theme = {\"name\": \"Acme Bespoke\"};</script><button class=\"quick-add__submit\">Add</button></body></html>",
+  "asset_bodies": {
+    "https://cdn.shopify.com/s/files/1/0000/1111/t/9/assets/theme.js": "const modal='details-modal.js'; const drawer='predictive-search';",
+    "https://cdn.shopify.com/s/files/1/0000/1111/t/9/assets/theme.css": ".price__container{display:grid}.card__heading{font-weight:700}"
+  },
+  "expected": {
+    "classification": "custom-derived",
+    "likely_base_theme": "Dawn"
+  }
+}

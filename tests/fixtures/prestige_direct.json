@@ -1,0 +1,14 @@
+{
+  "url": "https://fixtures.example/prestige",
+  "final_url": "https://fixtures.example/prestige",
+  "status_code": 200,
+  "html": "<html><head><meta name=\"generator\" content=\"Shopify\"><link rel=\"stylesheet\" href=\"https://cdn.shopify.com/s/files/1/0000/1111/t/12/assets/ap-theme.css\"><script src=\"https://cdn.shopify.com/s/files/1/0000/1111/t/12/assets/ap-theme.js\"></script></head><body class=\"theme--prestige\"><script>Shopify.theme = {\"name\": \"Prestige\"};</script><div class=\"ap-productform\"></div></body></html>",
+  "asset_bodies": {
+    "https://cdn.shopify.com/s/files/1/0000/1111/t/12/assets/ap-theme.js": "window.theme='prestige';",
+    "https://cdn.shopify.com/s/files/1/0000/1111/t/12/assets/ap-theme.css": ".ap-linkbar{display:flex}"
+  },
+  "expected": {
+    "classification": "known-theme",
+    "likely_base_theme": "Prestige"
+  }
+}
