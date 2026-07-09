@@ -47,5 +47,6 @@ def build_fixture_bundle(
         "selected_asset_urls": probe_urls,
         "asset_bodies": resolved_asset_bodies,
         "raw_signals": audit.raw_signals,
+        "asset_cross_reference": audit.asset_cross_reference.to_dict(),
         "audit": audit.to_dict(),
     }

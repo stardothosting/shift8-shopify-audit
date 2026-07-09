@@ -13,15 +13,28 @@ from .models import Evidence
 SHOPIFY_PATTERNS = {
     "shopify_cdn": re.compile(r"cdn\.shopify\.com|cdn/shop/"),
     "theme_asset_id": re.compile(r"/cdn/shop/t/(\d+)/assets/"),
-    "shopify_theme_obj": re.compile(r"Shopify\.theme\s*=\s*\{[^}]*name\s*:\s*['\"]([^'\"]+)"),
-    "shopify_theme_name": re.compile(r"Shopify\.theme[^\n]+name[^\n]+['\"]([^'\"]+)['\"]"),
-    "theme_store_marker": re.compile(r"(?:theme|shopify)[-_ ]?(?:name|theme)[:=]\s*['\"]([^'\"]+)['\"]", re.IGNORECASE),
+    "shopify_theme_obj": re.compile(r"Shopify\.theme\s*=\s*\{.*?[\"']?name[\"']?\s*:\s*[\"']([^\"']+)[\"']", re.IGNORECASE | re.DOTALL),
+    "shopify_theme_name": re.compile(r"Shopify\.theme\.name\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE),
 }
 
 
 def extract_signals(html: str, base_url: str) -> tuple[dict[str, list[str]], list[Evidence], bool]:
     soup = BeautifulSoup(html, "html.parser")
     signals: dict[str, list[str]] = defaultdict(list)
+    for bucket_name in (
+        "script_urls",
+        "stylesheet_urls",
+        "asset_paths",
+        "asset_filenames",
+        "theme_asset_ids",
+        "classes",
+        "attributes",
+        "theme_names",
+        "meta",
+        "asset_content_tokens",
+        "probed_asset_urls",
+    ):
+        signals.setdefault(bucket_name, [])
     clues: list[Evidence] = []
 
     _collect_script_signals(soup, base_url, signals, clues)
@@ -86,9 +99,11 @@ def _collect_script_source(absolute_src: str, signals: dict[str, list[str]], clu
 
 
 def _collect_theme_names_from_script(script_text: str, signals: dict[str, list[str]], clues: list[Evidence]) -> None:
-    for pattern_name in ("shopify_theme_obj", "shopify_theme_name", "theme_store_marker"):
+    for pattern_name in ("shopify_theme_obj", "shopify_theme_name"):
         for match in SHOPIFY_PATTERNS[pattern_name].finditer(script_text):
             theme_name = match.group(1).strip()
+            if _looks_like_theme_noise(theme_name, script_text):
+                continue
             signals["theme_names"].append(theme_name)
             clues.append(
                 Evidence(
@@ -168,3 +183,17 @@ def _collect_meta_signals(soup: BeautifulSoup, signals: dict[str, list[str]], cl
                 reason="Generator metadata identifies Shopify.",
             )
         )
+
+
+def _looks_like_theme_noise(theme_name: str, script_text: str) -> bool:
+    lowered_name = theme_name.lower().strip()
+    lowered_script = script_text.lower()
+    if not lowered_name:
+        return True
+    if ".handle" in lowered_name or "shopify.theme" in lowered_name:
+        return True
+    if lowered_name in {"handle", "name", "theme", "shopify"}:
+        return True
+    if "shopify.theme.handle" in lowered_script and lowered_name in lowered_script:
+        return True
+    return False

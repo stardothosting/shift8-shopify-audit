@@ -36,6 +36,8 @@ def test_build_fixture_bundle_includes_audit_and_probe_metadata() -> None:
     assert bundle["selected_asset_urls"]
     assert bundle["audit"]["assessment"]["likely_base_theme"] == "Dawn"
     assert "quick-add__submit" in bundle["raw_signals"]["asset_content_tokens"]
+    assert bundle["asset_cross_reference"]["asset_count"] >= 2
+    assert bundle["audit"]["lineage_diagnostics"][0]["qualified"] is True
 
 
 def test_export_fixture_writes_json_bundle(tmp_path, monkeypatch) -> None:

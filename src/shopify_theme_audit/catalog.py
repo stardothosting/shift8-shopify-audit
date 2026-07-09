@@ -1,10 +1,12 @@
 THEME_CATALOG: dict[str, dict[str, list[str] | int]] = {
     "Dawn": {
         "weight": 6,
-        "tokens": [
+        "strong_tokens": [
             "component-slider.css",
             "component-card.css",
             "details-disclosure.js",
+        ],
+        "weak_tokens": [
             "predictive-search",
             "quick-add__submit",
             "card__heading",
@@ -60,13 +62,18 @@ THEME_CATALOG: dict[str, dict[str, list[str] | int]] = {
 STARTER_THEME_CATALOG: dict[str, dict[str, list[str] | int]] = {
     "Dawn": {
         "weight": 7,
-        "tokens": [
+        "weak_weight": 3,
+        "min_strong": 1,
+        "min_weak": 2,
+        "strong_tokens": [
             "component-slider.css",
             "component-card.css",
             "component-cart-items.css",
             "details-disclosure.js",
             "details-modal.js",
             "quick-add.js",
+        ],
+        "weak_tokens": [
             "global.js",
             "predictive-search",
             "quick-add__submit",

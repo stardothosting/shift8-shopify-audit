@@ -46,6 +46,7 @@ def test_summarize_audit_uses_openai_compatible_chat_api(monkeypatch) -> None:
         ],
         candidate_themes=[],
         lineage_themes=[],
+        lineage_diagnostics=[],
         assessment=ThemeAssessment(
             classification="known-theme",
             confidence=90,
@@ -61,4 +62,4 @@ def test_summarize_audit_uses_openai_compatible_chat_api(monkeypatch) -> None:
     assert summary == "Likely Prestige."
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["authorization"] == "Bearer secret"
-    assert '"model": "gpt-4.1-mini"' in str(captured["payload"])
+    assert '"model":"gpt-4.1-mini"' in str(captured["payload"])

@@ -23,3 +23,21 @@ def test_extract_signals_finds_shopify_and_theme_name() -> None:
     assert "ap-theme.css" in signals["asset_filenames"]
     assert any(clue.kind == "theme_name" and clue.value == "Prestige" for clue in clues)
     assert any(clue.kind == "platform" and "cdn.shopify.com" in clue.value for clue in clues)
+
+
+def test_extract_signals_ignores_theme_handle_noise() -> None:
+    html = """
+    <html>
+      <body>
+        <script>
+          Shopify.theme.handle = "custom-theme";
+        </script>
+      </body>
+    </html>
+    """
+
+    signals, clues, shopify_detected = extract_signals(html, "https://example.com")
+
+    assert shopify_detected is False
+    assert signals["theme_names"] == []
+    assert not any(clue.kind == "theme_name" for clue in clues)

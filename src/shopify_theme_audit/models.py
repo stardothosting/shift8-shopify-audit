@@ -45,6 +45,34 @@ class ThemeAssessment:
 
 
 @dataclass(slots=True)
+class AssetCrossReference:
+    asset_count: int
+    shared_filename_stems: list[str] = field(default_factory=list)
+    shared_filename_prefixes: list[str] = field(default_factory=list)
+    filename_tokens: list[str] = field(default_factory=list)
+    custom_namespaces: list[str] = field(default_factory=list)
+    theme_asset_ids: list[str] = field(default_factory=list)
+    shopify_cloud_assets: list[str] = field(default_factory=list)
+    extension_assets: list[str] = field(default_factory=list)
+    app_assets: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class LineageDiagnostic:
+    theme_name: str
+    strong_matches: list[str] = field(default_factory=list)
+    weak_matches: list[str] = field(default_factory=list)
+    qualified: bool = False
+    score: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class StorefrontAudit:
     url: str
     final_url: str
@@ -53,8 +81,10 @@ class StorefrontAudit:
     clues: list[Evidence]
     candidate_themes: list[CandidateTheme]
     lineage_themes: list[CandidateTheme]
+    lineage_diagnostics: list[LineageDiagnostic]
     assessment: ThemeAssessment
     raw_signals: dict[str, list[str]]
+    asset_cross_reference: AssetCrossReference = field(default_factory=lambda: AssetCrossReference(asset_count=0))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,7 +95,9 @@ class StorefrontAudit:
             "clues": [clue.to_dict() for clue in self.clues],
             "candidate_themes": [theme.to_dict() for theme in self.candidate_themes],
             "lineage_themes": [theme.to_dict() for theme in self.lineage_themes],
+            "lineage_diagnostics": [item.to_dict() for item in self.lineage_diagnostics],
             "assessment": self.assessment.to_dict(),
+            "asset_cross_reference": self.asset_cross_reference.to_dict(),
             "raw_signals": self.raw_signals,
         }
 

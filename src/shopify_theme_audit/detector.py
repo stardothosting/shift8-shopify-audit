@@ -3,8 +3,9 @@ from __future__ import annotations
 from .asset_probe import build_asset_probe_signals, select_probe_asset_urls
 from .catalog import STARTER_THEME_CATALOG, THEME_CATALOG
 from .fetcher import fetch_html, fetch_text_assets
+from .cross_reference import analyze_asset_cross_reference
 from .fingerprints import extract_signals
-from .models import CandidateTheme, Evidence, StorefrontAudit, ThemeAssessment
+from .models import AssetCrossReference, CandidateTheme, Evidence, LineageDiagnostic, StorefrontAudit, ThemeAssessment
 
 
 def audit_storefront(url: str) -> StorefrontAudit:
@@ -30,9 +31,11 @@ def audit_storefront_payload(
         _merge_signals(signals, asset_signals)
         clues.extend(asset_clues)
 
+    asset_cross_reference = analyze_asset_cross_reference(signals)
+
     candidate_themes = score_candidates(signals, clues)
-    lineage_themes = score_lineages(signals, clues)
-    assessment = assess_theme_identity(shopify_detected, clues, candidate_themes, lineage_themes)
+    lineage_themes, lineage_diagnostics = score_lineages(signals, clues)
+    assessment = assess_theme_identity(shopify_detected, clues, candidate_themes, lineage_themes, asset_cross_reference)
     return StorefrontAudit(
         url=url,
         final_url=final_url,
@@ -41,7 +44,9 @@ def audit_storefront_payload(
         clues=clues,
         candidate_themes=candidate_themes,
         lineage_themes=lineage_themes,
+        lineage_diagnostics=lineage_diagnostics,
         assessment=assessment,
+        asset_cross_reference=asset_cross_reference,
         raw_signals=signals,
     )
 
@@ -50,8 +55,8 @@ def score_candidates(signals: dict[str, list[str]], clues: list[Evidence]) -> li
     return _score_catalog(signals, clues, THEME_CATALOG, exact_name_bonus=20)
 
 
-def score_lineages(signals: dict[str, list[str]], clues: list[Evidence]) -> list[CandidateTheme]:
-    return _score_catalog(signals, clues, STARTER_THEME_CATALOG, exact_name_bonus=10)
+def score_lineages(signals: dict[str, list[str]], clues: list[Evidence]) -> tuple[list[CandidateTheme], list[LineageDiagnostic]]:
+    return _score_lineages(signals, clues, STARTER_THEME_CATALOG, exact_name_bonus=10)
 
 
 def assess_theme_identity(
@@ -59,10 +64,17 @@ def assess_theme_identity(
     clues: list[Evidence],
     candidate_themes: list[CandidateTheme],
     lineage_themes: list[CandidateTheme],
+    asset_cross_reference: AssetCrossReference,
 ) -> ThemeAssessment:
     exposed_theme_name = next((clue.value for clue in clues if clue.kind == "theme_name"), None)
     known_theme = candidate_themes[0] if candidate_themes else None
     starter_lineage = lineage_themes[0] if lineage_themes else None
+
+    custom_namespace_assessment = _build_custom_namespace_assessment(
+        shopify_detected, exposed_theme_name, known_theme, starter_lineage, asset_cross_reference
+    )
+    if custom_namespace_assessment is not None:
+        return custom_namespace_assessment
 
     for builder in (
         lambda: _build_exact_match_assessment(exposed_theme_name, known_theme),
@@ -84,6 +96,55 @@ def assess_theme_identity(
 def _score_catalog(
     signals: dict[str, list[str]], clues: list[Evidence], catalog: dict[str, dict[str, list[str] | int]], exact_name_bonus: int
 ) -> list[CandidateTheme]:
+    searchable = _searchable_signals(signals)
+    exact_theme_names = {clue.value.lower(): clue for clue in clues if clue.kind == "theme_name"}
+    matches: list[CandidateTheme] = []
+
+    for theme_name, rule in catalog.items():
+        candidate = _score_known_theme_candidate(theme_name, rule, searchable, exact_theme_names, exact_name_bonus)
+        if candidate is not None:
+            matches.append(candidate)
+
+    return sorted(matches, key=lambda item: item.score, reverse=True)
+
+
+def _score_lineages(
+    signals: dict[str, list[str]], clues: list[Evidence], catalog: dict[str, dict[str, list[str] | int]], exact_name_bonus: int
+) -> tuple[list[CandidateTheme], list[LineageDiagnostic]]:
+    searchable = _searchable_signals(signals)
+    exact_theme_names = {clue.value.lower(): clue for clue in clues if clue.kind == "theme_name"}
+    candidates: list[CandidateTheme] = []
+    diagnostics: list[LineageDiagnostic] = []
+
+    for theme_name, rule in catalog.items():
+        diagnostic = _build_lineage_diagnostic(theme_name, rule, searchable, exact_theme_names, exact_name_bonus)
+        diagnostics.append(diagnostic)
+        if not diagnostic.qualified:
+            continue
+
+        candidates.append(
+            CandidateTheme(
+                name=theme_name,
+                score=diagnostic.score,
+                matched_evidence=_matched_lineage_evidence(theme_name, rule, diagnostic, exact_theme_names),
+            )
+        )
+
+    candidates.sort(key=lambda item: item.score, reverse=True)
+    diagnostics.sort(key=lambda item: item.score, reverse=True)
+    return candidates, diagnostics
+
+
+def _catalog_token_groups(rule: dict[str, list[str] | int]) -> tuple[list[str], list[str]]:
+    strong_tokens = rule.get("strong_tokens")
+    weak_tokens = rule.get("weak_tokens")
+    direct_tokens = rule.get("tokens")
+    if isinstance(strong_tokens, list) or isinstance(weak_tokens, list):
+        return list(strong_tokens or []), list(weak_tokens or [])
+    return list(direct_tokens or []), []
+
+
+def _searchable_signals(signals: dict[str, list[str]]) -> str:
     haystacks = [
         *signals.get("script_urls", []),
         *signals.get("stylesheet_urls", []),
@@ -95,41 +156,121 @@ def _score_catalog(
         *signals.get("theme_names", []),
         *signals.get("meta", []),
     ]
-    searchable = "\n".join(haystacks).lower()
-    exact_theme_names = {clue.value.lower(): clue for clue in clues if clue.kind == "theme_name"}
-    matches: list[CandidateTheme] = []
+    return "\n".join(haystacks).lower()
 
-    for theme_name, rule in catalog.items():
-        matched_evidence: list[Evidence] = []
-        score = 0
-        if theme_name.lower() in exact_theme_names:
-            matched_evidence.append(exact_theme_names[theme_name.lower()])
-            score += exact_name_bonus
 
-        rule_weight = int(rule["weight"])
-        for token in rule["tokens"]:
-            if token.lower() in searchable:
-                matched_evidence.append(
-                    Evidence(
-                        kind="fingerprint",
-                        source="catalog",
-                        value=token,
-                        weight=rule_weight,
-                        reason=f"Matched known fingerprint token for {theme_name}.",
-                    )
-                )
-                score += rule_weight
+def _score_known_theme_candidate(
+    theme_name: str,
+    rule: dict[str, list[str] | int],
+    searchable: str,
+    exact_theme_names: dict[str, Evidence],
+    exact_name_bonus: int,
+) -> CandidateTheme | None:
+    score, matched_evidence = _known_theme_score_parts(theme_name, rule, searchable, exact_theme_names, exact_name_bonus)
+    if not score:
+        return None
+    return CandidateTheme(name=theme_name, score=score, matched_evidence=matched_evidence)
 
-        if score:
-            matches.append(
-                CandidateTheme(
-                    name=theme_name,
-                    score=score,
-                    matched_evidence=matched_evidence,
-                )
+
+def _known_theme_score_parts(
+    theme_name: str,
+    rule: dict[str, list[str] | int],
+    searchable: str,
+    exact_theme_names: dict[str, Evidence],
+    exact_name_bonus: int,
+) -> tuple[int, list[Evidence]]:
+    matched_evidence: list[Evidence] = []
+    score = 0
+    strong_tokens, weak_tokens = _catalog_token_groups(rule)
+    has_exact_name = theme_name.lower() in exact_theme_names
+    if has_exact_name:
+        matched_evidence.append(exact_theme_names[theme_name.lower()])
+        score += exact_name_bonus
+
+    rule_weight = int(rule["weight"])
+    strong_matches = _matching_tokens(strong_tokens, searchable)
+    weak_matches = _matching_tokens(weak_tokens, searchable)
+    score += _append_token_evidence(matched_evidence, theme_name, strong_matches, rule_weight, "known-theme")
+
+    if score or has_exact_name:
+        score += _append_token_evidence(matched_evidence, theme_name, weak_matches, _weak_weight(rule), "known-theme", strength="weak")
+    return score, matched_evidence
+
+
+def _append_token_evidence(
+    matched_evidence: list[Evidence],
+    theme_name: str,
+    matches: list[str],
+    weight: int,
+    label: str,
+    strength: str = "strong",
+) -> int:
+    for token in matches:
+        matched_evidence.append(
+            Evidence(
+                kind="fingerprint",
+                source="catalog",
+                value=token,
+                weight=weight,
+                reason=f"Matched {strength} {label} fingerprint token for {theme_name}.",
             )
+        )
+    return len(matches) * weight
 
-    return sorted(matches, key=lambda item: item.score, reverse=True)
+
+def _build_lineage_diagnostic(
+    theme_name: str,
+    rule: dict[str, list[str] | int],
+    searchable: str,
+    exact_theme_names: dict[str, Evidence],
+    exact_name_bonus: int,
+) -> LineageDiagnostic:
+    strong_tokens, weak_tokens = _catalog_token_groups(rule)
+    strong_matches = _matching_tokens(strong_tokens, searchable)
+    weak_matches = _matching_tokens(weak_tokens, searchable)
+    has_exact_name = theme_name.lower() in exact_theme_names
+    qualified = has_exact_name or _qualifies_lineage(rule, strong_matches, weak_matches)
+    score = (exact_name_bonus if has_exact_name else 0) + len(strong_matches) * int(rule["weight"]) + len(weak_matches) * _weak_weight(rule)
+    return LineageDiagnostic(
+        theme_name=theme_name,
+        strong_matches=strong_matches,
+        weak_matches=weak_matches,
+        qualified=qualified,
+        score=score,
+    )
+
+
+def _matched_lineage_evidence(
+    theme_name: str,
+    rule: dict[str, list[str] | int],
+    diagnostic: LineageDiagnostic,
+    exact_theme_names: dict[str, Evidence],
+) -> list[Evidence]:
+    matched_evidence: list[Evidence] = []
+    if theme_name.lower() in exact_theme_names:
+        matched_evidence.append(exact_theme_names[theme_name.lower()])
+    _append_token_evidence(matched_evidence, theme_name, diagnostic.strong_matches, int(rule["weight"]), "starter-theme")
+    _append_token_evidence(matched_evidence, theme_name, diagnostic.weak_matches, _weak_weight(rule), "starter-theme", strength="weak")
+    return matched_evidence
+
+
+def _matching_tokens(tokens: list[str], searchable: str) -> list[str]:
+    return [token for token in tokens if token.lower() in searchable]
+
+
+def _weak_weight(rule: dict[str, list[str] | int]) -> int:
+    explicit = rule.get("weak_weight")
+    if isinstance(explicit, int):
+        return explicit
+    return max(1, int(rule["weight"]) // 2)
+
+
+def _qualifies_lineage(rule: dict[str, list[str] | int], strong_matches: list[str], weak_matches: list[str]) -> bool:
+    min_strong = int(rule.get("min_strong", 1))
+    min_weak = int(rule.get("min_weak", 0))
+    if len(strong_matches) >= max(2, min_strong):
+        return True
+    return len(strong_matches) >= min_strong and len(weak_matches) >= min_weak and len(strong_matches) > 0
 
 
 def _build_exact_match_assessment(exposed_theme_name: str | None, known_theme: CandidateTheme | None) -> ThemeAssessment | None:
@@ -224,6 +365,43 @@ def _build_non_shopify_assessment() -> ThemeAssessment:
         customness_score=0,
         rationale="The current signals do not confidently identify Shopify storefront infrastructure.",
     )
+
+
+def _build_custom_namespace_assessment(
+    shopify_detected: bool,
+    exposed_theme_name: str | None,
+    known_theme: CandidateTheme | None,
+    starter_lineage: CandidateTheme | None,
+    asset_cross_reference: AssetCrossReference,
+) -> ThemeAssessment | None:
+    if not shopify_detected or not asset_cross_reference.custom_namespaces:
+        return None
+    if not _is_weak_match(known_theme) and not _is_weak_match(starter_lineage):
+        return None
+
+    namespace_label = ", ".join(asset_cross_reference.custom_namespaces[:3])
+    return ThemeAssessment(
+        classification="shopify-custom",
+        confidence=68,
+        customness_score=88,
+        exposed_theme_name=exposed_theme_name,
+        rationale=(
+            "The storefront has a strong internal asset and class namespace "
+            f"({namespace_label}), while the current theme-library matches are weak and generic."
+        ),
+    )
+
+
+def _is_weak_match(candidate: CandidateTheme | None) -> bool:
+    if candidate is None:
+        return True
+    if candidate.score >= 12:
+        return False
+    if len(candidate.matched_evidence) > 1:
+        return False
+    if not candidate.matched_evidence:
+        return True
+    return candidate.matched_evidence[0].value in {"predictive-search", "quick-add__submit", "price__container", "global.js"}
 
 
 def _merge_signals(signals: dict[str, list[str]], additional_signals: dict[str, list[str]]) -> None:

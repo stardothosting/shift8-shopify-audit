@@ -75,8 +75,22 @@ def _catalog_tokens(catalogs: Iterable[dict[str, dict[str, list[str] | int]]]) -
     tokens: set[str] = set()
     for catalog in catalogs:
         for rule in catalog.values():
-            for token in rule["tokens"]:
+            for token in _rule_tokens(rule):
                 tokens.add(token.lower())
+    return tokens
+
+
+def _rule_tokens(rule: dict[str, list[str] | int]) -> list[str]:
+    strong_tokens = rule.get("strong_tokens")
+    weak_tokens = rule.get("weak_tokens")
+    direct_tokens = rule.get("tokens")
+    tokens: list[str] = []
+    if isinstance(strong_tokens, list):
+        tokens.extend(strong_tokens)
+    if isinstance(weak_tokens, list):
+        tokens.extend(weak_tokens)
+    if isinstance(direct_tokens, list):
+        tokens.extend(direct_tokens)
     return tokens
 
 

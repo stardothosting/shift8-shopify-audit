@@ -83,7 +83,32 @@ shopify-theme-audit audit https://example.com --format json
 shopify-theme-audit audit https://example.com --with-ai --provider deepseek
 shopify-theme-audit init-config
 shopify-theme-audit export-fixture https://example.com --output tests/fixtures/example.json
+shopify-theme-audit benchmark
 ```
+
+## Benchmarking
+
+The CLI includes a small live benchmark set for regression checks against known storefronts.
+
+Current built-in cases cover:
+
+- official Dawn demo
+- official Prestige demo
+- Phaidon as a custom Shopify storefront
+
+Run all benchmarks:
+
+```bash
+shopify-theme-audit benchmark
+```
+
+Run a subset:
+
+```bash
+shopify-theme-audit benchmark --case official-dawn --case phaidon-custom
+```
+
+The benchmark command exits non-zero if any case fails its expected classification, base-theme, or candidate checks.
 
 ## Building the fixture library
 
