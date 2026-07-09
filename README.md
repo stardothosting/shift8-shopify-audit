@@ -123,6 +123,12 @@ The current test coverage includes:
 - AI request shaping
 - fixture-backed integration checks
 
+## Project docs
+
+- contribution guide: `CONTRIBUTING.md`
+- security policy: `SECURITY.md`
+- license: `LICENSE.md`
+
 ## Repository layout
 
 ```text
@@ -157,4 +163,4 @@ There is still room to harden the project further as it grows. Useful follow-up 
 - grow the fixture library from real storefront captures
 - expand verified starter-theme and legacy-theme lineage coverage
 - add a CLI workflow for exporting normalized fixture bundles
-- add contribution and release documentation once the public API stabilizes
+- add release documentation once the public API stabilizes
